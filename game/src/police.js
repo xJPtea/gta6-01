@@ -31,7 +31,7 @@ export function spawnPolice(G) {
   while (G.police.length < wantCars) {
     const a = rng.range(0, Math.PI * 2);
     // Far enough out that the chase is still closing in a few seconds in.
-    const d = rng.range(650, 850);
+    const d = rng.range(1000, 1300);
     // Spawn on a road so the car can actually drive to the player.
     const spot = nearestRoadPoint(
       clamp(G.player.x + Math.cos(a) * d, 60, WORLD_W - 60),
@@ -101,18 +101,13 @@ export function updatePolice(G, dt) {
     }
     car.px = car.x; car.py = car.y;
     // On foot, the cars pull up short and let the foot cops do the arrest.
-    // Brake early so they stop clear of her instead of ramming through.
+    // Speed is capped by the distance left, so they slow smoothly into
+    // the standoff instead of overshooting it at full speed.
     const holdDist = p.onFoot ? 120 : 46;
-    if (d > holdDist + 140) {
-      car.angle = turnToward(car.angle, target, 3.2 * dt);
-      car.speed = Math.min(maxSpeed, car.speed + 420 * dt);
-    } else if (d > holdDist) {
-      car.angle = turnToward(car.angle, target, 3.2 * dt);
-      car.speed = Math.max(0, car.speed - 700 * dt);
-    } else {
-      car.speed = Math.max(0, car.speed - 500 * dt);
-      car.angle = turnToward(car.angle, target, 1.2 * dt);
-    }
+    const desired = clamp((d - holdDist) * 2, 0, maxSpeed);
+    if (car.speed < desired) car.speed = Math.min(desired, car.speed + 420 * dt);
+    else car.speed = Math.max(0, car.speed - 500 * dt);
+    car.angle = turnToward(car.angle, target, 3.2 * dt);
     moveWithCollision(G.city, car,
       Math.cos(car.angle) * car.speed * dt,
       Math.sin(car.angle) * car.speed * dt, 20);
@@ -132,9 +127,17 @@ export function updatePolice(G, dt) {
     }
   }
 
+  // A cop has to hold Rae for a moment to make the arrest: she can still
+  // break away, which keeps a chase tense instead of instant. The timer
+  // is shared across cops — any cop holding her counts.
+  // During the garage ambush the foot cops hold the perimeter instead of
+  // wading into a gang shootout; they resume once the rivals are down.
+  const ambushHold = G.missionIndex === 2 && G.enemies.length > 0;
+  let anyClose = false;
   for (const cop of G.cops) {
     const d = dist(cop.x, cop.y, p.x, p.y);
     let target = angleTo(cop.x, cop.y, p.x, p.y);
+    if (ambushHold) { cop.angle = target; continue; }
     // A cop wedged on a building corner slides sideways around it.
     const moved = dist(cop.x, cop.y, cop.px || cop.x, cop.py || cop.y);
     if (moved < 1.5) cop.stuck = (cop.stuck || 0) + dt;
@@ -151,27 +154,26 @@ export function updatePolice(G, dt) {
     cop.px = cop.x; cop.py = cop.y;
     cop.angle = target;
     // Foot cops sprint at a player on foot; they cannot catch a car.
-    const speed = p.onFoot ? 150 : 90;
+    // A cop far behind runs faster until it catches up with the pack.
+    const speed = p.onFoot ? (d > 500 ? 200 : 150) : 90;
     moveWithCollision(G.city, cop,
       Math.cos(target) * speed * dt,
       Math.sin(target) * speed * dt, 12);
-    // A cop has to hold Rae for a moment to make the arrest: she can
-    // still break away, which keeps a chase tense instead of instant.
-    if (p.onFoot && d < 26) {
-      G.bustTimer = (G.bustTimer || 0) + dt;
-      G.toast = 'The cops are grabbing you — run!';
-      if (G.bustTimer > 0.8) {
-        G.bustTimer = 0;
-        G.screen = 'busted';
-        G.stats.busts += 1;
-        G.sound.engine(0, false);
-        G.sound.siren(false, 0);
-        G.sound.busted();
-        return;
-      }
-    } else {
+    if (p.onFoot && d < 26) anyClose = true;
+  }
+  if (anyClose) {
+    G.bustTimer = (G.bustTimer || 0) + dt;
+    G.toast = 'The cops are grabbing you — run!';
+    if (G.bustTimer > 0.8) {
       G.bustTimer = 0;
+      G.screen = 'busted';
+      G.stats.busts += 1;
+      G.sound.engine(0, false);
+      G.sound.siren(false, 0);
+      G.sound.busted();
     }
+  } else {
+    G.bustTimer = 0;
   }
 }
 

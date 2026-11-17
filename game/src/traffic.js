@@ -2,7 +2,7 @@
 // wrap around the world edges; parked cars wait at the kerb to be stolen;
 // pedestrians stroll the sidewalks and run from trouble.
 import { makeRng, clamp, dist } from './rng.js';
-import { V_ROADS, H_ROADS, ROAD_W, WORLD_W, WORLD_H, onRoad } from './city.js';
+import { V_ROADS, H_ROADS, ROAD_W, WORLD_W, WORLD_H, onRoad, ZONES } from './city.js';
 
 export const CAR_COLORS = [
   '#c8452c', '#2c6ac8', '#e8c832', '#38a05a', '#e8e8e8',
@@ -36,6 +36,12 @@ export function buildTraffic(G) {
     G.cars.push(makeCar(x, y, a, rng.pick(CAR_COLORS), {
       parked: true, driver: rng.chance(0.45),
     }));
+  }
+  // The cars by Rae's starting corner are always empty: the first steal
+  // of a run is a clean getaway, so the police response to a later wanted
+  // level arrives fresh instead of already parked on top of her.
+  for (const car of G.cars) {
+    if (dist(car.x, car.y, ZONES.spawn.x, ZONES.spawn.y) < 300) car.driver = false;
   }
   // Moving traffic on the roads.
   G.traffic = [];
